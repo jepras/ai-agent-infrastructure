@@ -15,6 +15,9 @@ COPY backend/ ./backend/
 COPY railway.toml .
 COPY env.example .
 
+# Add backend directory to Python path
+ENV PYTHONPATH=/app/backend
+
 # Expose port
 EXPOSE 8000
 
