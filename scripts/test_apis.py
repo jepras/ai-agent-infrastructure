@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for Outlook and Pipedrive APIs
+Test script for Outlook and Pipedrive APIs using OAuth client credentials
 """
 import os
 import requests
@@ -10,53 +10,75 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def test_pipedrive_api():
-    """Test Pipedrive API with API key"""
-    print("🔍 Testing Pipedrive API...")
+def test_pipedrive_oauth():
+    """Test Pipedrive API with OAuth client credentials"""
+    print("🔍 Testing Pipedrive OAuth...")
 
-    api_key = os.getenv("PIPEDRIVE_API_KEY")
-    if not api_key:
-        print("❌ PIPEDRIVE_API_KEY not found in environment variables")
+    client_id = os.getenv("PIPEDRIVE_CLIENT_ID")
+    client_secret = os.getenv("PIPEDRIVE_CLIENT_SECRET")
+
+    if not client_id or not client_secret:
+        print("❌ PIPEDRIVE_CLIENT_ID or PIPEDRIVE_CLIENT_SECRET not found")
         return False
 
-    # Test user info
+    # Get access token using client credentials flow
     try:
-        response = requests.get(
-            "https://api.pipedrive.com/v1/users/me",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
+        token_url = "https://oauth.pipedrive.com/oauth/token"
+        token_data = {
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
 
-        if response.status_code == 200:
-            user_data = response.json()
-            print(f"✅ Pipedrive API working! User: {user_data['data']['name']}")
+        token_response = requests.post(token_url, data=token_data)
 
-            # Test deals endpoint
-            deals_response = requests.get(
-                "https://api.pipedrive.com/v1/deals",
-                headers={"Authorization": f"Bearer {api_key}"},
+        if token_response.status_code == 200:
+            token_info = token_response.json()
+            access_token = token_info["access_token"]
+            print("✅ Got Pipedrive access token")
+
+            # Test API with token
+            api_response = requests.get(
+                "https://api.pipedrive.com/v1/users/me",
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
-            if deals_response.status_code == 200:
-                deals_data = deals_response.json()
-                print(
-                    f"✅ Deals endpoint working! Found {len(deals_data.get('data', []))} deals"
-                )
-            else:
-                print(f"⚠️ Deals endpoint failed: {deals_response.status_code}")
+            if api_response.status_code == 200:
+                user_data = api_response.json()
+                print(f"✅ Pipedrive API working! User: {user_data['data']['name']}")
 
-            return True
+                # Test deals endpoint
+                deals_response = requests.get(
+                    "https://api.pipedrive.com/v1/deals",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+                if deals_response.status_code == 200:
+                    deals_data = deals_response.json()
+                    print(
+                        f"✅ Deals endpoint working! Found {len(deals_data.get('data', []))} deals"
+                    )
+                else:
+                    print(f"⚠️ Deals endpoint failed: {deals_response.status_code}")
+
+                return True
+            else:
+                print(f"❌ Pipedrive API failed: {api_response.status_code}")
+                return False
         else:
-            print(f"❌ Pipedrive API failed: {response.status_code} - {response.text}")
+            print(
+                f"❌ Failed to get Pipedrive token: {token_response.status_code} - {token_response.text}"
+            )
             return False
 
     except Exception as e:
-        print(f"❌ Pipedrive API error: {e}")
+        print(f"❌ Pipedrive OAuth error: {e}")
         return False
 
 
-def test_outlook_api():
-    """Test Outlook API with client credentials"""
-    print("\n🔍 Testing Outlook API...")
+def test_outlook_oauth():
+    """Test Outlook API with OAuth client credentials"""
+    print("\n🔍 Testing Outlook OAuth...")
 
     client_id = os.getenv("OUTLOOK_CLIENT_ID")
     client_secret = os.getenv("OUTLOOK_CLIENT_SECRET")
@@ -92,35 +114,60 @@ def test_outlook_api():
             )
 
             if graph_response.status_code == 200:
-                print("✅ Outlook Graph API working!")
+                users_data = graph_response.json()
+                print(
+                    f"✅ Outlook Graph API working! Found {len(users_data.get('value', []))} users"
+                )
+
+                # Test mail endpoint
+                mail_response = requests.get(
+                    "https://graph.microsoft.com/v1.0/me/messages",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+
+                if mail_response.status_code == 200:
+                    mail_data = mail_response.json()
+                    print(
+                        f"✅ Mail endpoint working! Found {len(mail_data.get('value', []))} messages"
+                    )
+                else:
+                    print(f"⚠️ Mail endpoint failed: {mail_response.status_code}")
+
                 return True
             else:
                 print(f"❌ Outlook Graph API failed: {graph_response.status_code}")
                 return False
         else:
-            print(f"❌ Failed to get Outlook token: {token_response.status_code}")
+            print(
+                f"❌ Failed to get Outlook token: {token_response.status_code} - {token_response.text}"
+            )
             return False
 
     except Exception as e:
-        print(f"❌ Outlook API error: {e}")
+        print(f"❌ Outlook OAuth error: {e}")
         return False
 
 
 def main():
-    """Run API tests"""
-    print("🚀 Testing API Connections...\n")
+    """Run OAuth API tests"""
+    print("🚀 Testing OAuth API Connections...\n")
 
-    pipedrive_success = test_pipedrive_api()
-    outlook_success = test_outlook_api()
+    pipedrive_success = test_pipedrive_oauth()
+    outlook_success = test_outlook_oauth()
 
     print(f"\n📊 Results:")
-    print(f"Pipedrive API: {'✅ Working' if pipedrive_success else '❌ Failed'}")
-    print(f"Outlook API: {'✅ Working' if outlook_success else '❌ Failed'}")
+    print(f"Pipedrive OAuth: {'✅ Working' if pipedrive_success else '❌ Failed'}")
+    print(f"Outlook OAuth: {'✅ Working' if outlook_success else '❌ Failed'}")
 
     if pipedrive_success and outlook_success:
-        print("\n🎉 All APIs are working! Ready to proceed with development.")
+        print("\n🎉 All OAuth APIs are working! Ready to proceed with development.")
     else:
-        print("\n⚠️ Some APIs failed. Check your credentials and try again.")
+        print(
+            "\n⚠️ Some OAuth APIs failed. Check your client credentials and try again."
+        )
 
 
 if __name__ == "__main__":

@@ -27,6 +27,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Import and include routers
+from app.api import auth
+
+app.include_router(auth.router)
+
 
 # Health check endpoint
 @app.get("/health")
@@ -40,9 +45,21 @@ async def root():
     return {"message": "AI Email Processor API", "version": "0.1.0", "docs": "/docs"}
 
 
-# Include routers (will be added as we build them)
-# from app.api import auth, dashboard, webhooks, websocket
-# app.include_router(auth.router, prefix="/api/auth")
+# Database initialization
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables on startup"""
+    try:
+        from app.core.database import create_tables
+
+        create_tables()
+        print("Database tables created successfully")
+    except Exception as e:
+        print(f"Error creating database tables: {e}")
+
+
+# Include additional routers (will be added as we build them)
+# from app.api import dashboard, webhooks, websocket
 # app.include_router(dashboard.router, prefix="/api/dashboard")
 # app.include_router(webhooks.router, prefix="/api/webhooks")
 # app.include_router(websocket.router)
