@@ -18,10 +18,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://*.railway.app",
+        "https://adaptable-liberation-production.up.railway.app",
         "http://localhost:3000",
         "http://localhost:8000",
     ],
+    allow_origin_regex="https://.*\\.railway\\.app",  # Allow all Railway subdomains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
