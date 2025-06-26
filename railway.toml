@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+restartPolicyType = "on_failure"
+
+[env]
+PYTHON_VERSION = "3.11"
+
+[[services]]
+name = "ai-email-processor-backend" 
