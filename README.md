@@ -1,4 +1,4 @@
-# AI Email-to-Deal Processor
+# AI Email-to-Deal Processor.
 
 A GDPR-compliant AI system that monitors outgoing Outlook emails, identifies sales opportunities, and automatically creates deals in Pipedrive. Built on Railway infrastructure with unified authentication management.
 
