@@ -4,3 +4,5 @@ globs:
 alwaysApply: true
 ---
 When starting a new chat, first look through the [project_overview.md](mdc:project_overview.md) & [specification_doc.md](mdc:specification_doc.md).
+
+When wanting to deploy or push or add or commit to git, then always do add & commit & push in one terminal command. 
