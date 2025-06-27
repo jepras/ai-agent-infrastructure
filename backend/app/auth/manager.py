@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import Optional, Dict, Any, List
 import uuid
 from datetime import datetime, timedelta
+import json
 
 from ..models.database import User, UserCredential, UserProfile, UsageLimit
 from ..core.encryption import encryption_manager
@@ -11,6 +12,23 @@ from ..core.encryption import encryption_manager
 class AuthManager:
     def __init__(self, db: Session):
         self.db = db
+
+    def _parse_user_id(self, user_id: str) -> uuid.UUID:
+        """Parse user ID, handling fallback IDs from NextAuth"""
+        try:
+            # If it's a fallback user ID from NextAuth, extract the email and find/create user
+            if user_id.startswith("user-"):
+                email = user_id.replace("user-", "")
+                user = self.get_user_by_email(email)
+                if not user:
+                    # Create the user if it doesn't exist
+                    user = self.create_user(email=email, name=email.split("@")[0])
+                return user.id
+            else:
+                # Assume it's a valid UUID
+                return uuid.UUID(user_id)
+        except (ValueError, AttributeError):
+            raise ValueError(f"Invalid user ID format: {user_id}")
 
     # User Management
     def create_user(
@@ -53,7 +71,11 @@ class AuthManager:
 
     def get_user_by_id(self, user_id: str) -> Optional[User]:
         """Get user by ID"""
-        return self.db.query(User).filter(User.id == user_id).first()
+        try:
+            user_uuid = self._parse_user_id(user_id)
+            return self.db.query(User).filter(User.id == user_uuid).first()
+        except ValueError:
+            return None
 
     def update_user(self, user_id: str, **kwargs) -> Optional[User]:
         """Update user information"""
@@ -75,19 +97,28 @@ class AuthManager:
         self,
         user_id: str,
         credential_type: str,
-        data: str,
+        data: Any,
         expires_at: Optional[datetime] = None,
         metadata: Optional[Dict] = None,
     ) -> UserCredential:
         """Store encrypted credential for a user"""
+        # Convert data to JSON string if it's a dict
+        if isinstance(data, dict):
+            data_str = json.dumps(data)
+        else:
+            data_str = str(data)
+
         # Encrypt the data
-        encrypted_data = encryption_manager.encrypt(data)
+        encrypted_data = encryption_manager.encrypt(data_str)
+
+        # Parse user_id to UUID
+        user_uuid = self._parse_user_id(user_id)
 
         # Check if credential already exists
         existing = (
             self.db.query(UserCredential)
             .filter(
-                UserCredential.user_id == user_id,
+                UserCredential.user_id == user_uuid,
                 UserCredential.credential_type == credential_type,
             )
             .first()
@@ -105,7 +136,7 @@ class AuthManager:
         else:
             # Create new credential
             credential = UserCredential(
-                user_id=user_id,
+                user_id=user_uuid,
                 credential_type=credential_type,
                 encrypted_data=encrypted_data,
                 expires_at=expires_at,
@@ -116,81 +147,155 @@ class AuthManager:
             self.db.refresh(credential)
             return credential
 
-    def get_credential(self, user_id: str, credential_type: str) -> Optional[str]:
+    def get_credential(self, user_id: str, credential_type: str) -> Optional[Any]:
         """Get decrypted credential for a user"""
-        credential = (
-            self.db.query(UserCredential)
-            .filter(
-                UserCredential.user_id == user_id,
-                UserCredential.credential_type == credential_type,
-                UserCredential.is_active == True,
+        try:
+            user_uuid = self._parse_user_id(user_id)
+            credential = (
+                self.db.query(UserCredential)
+                .filter(
+                    UserCredential.user_id == user_uuid,
+                    UserCredential.credential_type == credential_type,
+                    UserCredential.is_active == True,
+                )
+                .first()
             )
-            .first()
-        )
 
-        if not credential:
+            if not credential:
+                return None
+
+            # Check if expired
+            if credential.expires_at and credential.expires_at < datetime.utcnow():
+                return None
+
+            # Decrypt and return
+            decrypted_data = encryption_manager.decrypt(credential.encrypted_data)
+
+            # Try to parse as JSON, fallback to string
+            try:
+                return json.loads(decrypted_data)
+            except json.JSONDecodeError:
+                return decrypted_data
+        except (ValueError, Exception) as e:
+            print(f"Error getting credential {credential_type} for user {user_id}: {e}")
             return None
-
-        # Check if expired
-        if credential.expires_at and credential.expires_at < datetime.utcnow():
-            return None
-
-        # Decrypt and return
-        return encryption_manager.decrypt(credential.encrypted_data)
 
     def delete_credential(self, user_id: str, credential_type: str) -> bool:
         """Delete a credential for a user"""
-        credential = (
-            self.db.query(UserCredential)
-            .filter(
-                UserCredential.user_id == user_id,
-                UserCredential.credential_type == credential_type,
+        try:
+            user_uuid = self._parse_user_id(user_id)
+            credential = (
+                self.db.query(UserCredential)
+                .filter(
+                    UserCredential.user_id == user_uuid,
+                    UserCredential.credential_type == credential_type,
+                )
+                .first()
             )
-            .first()
-        )
 
-        if credential:
-            self.db.delete(credential)
-            self.db.commit()
-            return True
-        return False
+            if credential:
+                self.db.delete(credential)
+                self.db.commit()
+                return True
+            return False
+        except ValueError:
+            return False
 
     def get_user_credentials(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all credentials for a user (without decrypted data)"""
-        credentials = (
-            self.db.query(UserCredential)
-            .filter(UserCredential.user_id == user_id)
-            .all()
-        )
-
-        result = []
-        for cred in credentials:
-            result.append(
-                {
-                    "id": str(cred.id),
-                    "credential_type": cred.credential_type,
-                    "is_active": cred.is_active,
-                    "expires_at": cred.expires_at,
-                    "metadata": cred.metadata,
-                    "created_at": cred.created_at,
-                    "updated_at": cred.updated_at,
-                }
+        try:
+            user_uuid = self._parse_user_id(user_id)
+            credentials = (
+                self.db.query(UserCredential)
+                .filter(UserCredential.user_id == user_uuid)
+                .all()
             )
 
-        return result
+            result = []
+            for cred in credentials:
+                result.append(
+                    {
+                        "id": str(cred.id),
+                        "credential_type": cred.credential_type,
+                        "is_active": cred.is_active,
+                        "expires_at": cred.expires_at,
+                        "metadata": cred.metadata,
+                        "created_at": cred.created_at,
+                        "updated_at": cred.updated_at,
+                    }
+                )
+
+            return result
+        except ValueError:
+            return []
+
+    # OAuth Integration Methods
+    def get_oauth_tokens(self, user_id: str, service: str) -> Optional[Dict[str, Any]]:
+        """Get OAuth tokens for a service"""
+        credential_type = f"{service}_oauth"
+        return self.get_credential(user_id, credential_type)
+
+    def store_oauth_tokens(
+        self,
+        user_id: str,
+        service: str,
+        tokens: Dict[str, Any],
+        user_info: Optional[Dict[str, Any]] = None,
+    ):
+        """Store OAuth tokens for a service"""
+        credential_type = f"{service}_oauth"
+
+        # Calculate expiration
+        expires_at = None
+        if "expires_in" in tokens:
+            expires_at = datetime.utcnow() + timedelta(seconds=tokens["expires_in"])
+
+        # Store with user info in metadata
+        metadata = {"user_info": user_info} if user_info else None
+
+        return self.store_credential(
+            user_id=user_id,
+            credential_type=credential_type,
+            data=tokens,
+            expires_at=expires_at,
+            metadata=metadata,
+        )
+
+    def is_service_connected(self, user_id: str, service: str) -> bool:
+        """Check if a service is connected for a user"""
+        try:
+            tokens = self.get_oauth_tokens(user_id, service)
+            return tokens is not None
+        except Exception as e:
+            print(f"Error checking service connection for {service}: {e}")
+            return False
+
+    def disconnect_service(self, user_id: str, service: str) -> bool:
+        """Disconnect a service for a user"""
+        return self.delete_credential(user_id, f"{service}_oauth")
 
     # Profile Management
     def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
         """Get user profile"""
-        return self.db.query(UserProfile).filter(UserProfile.id == user_id).first()
+        try:
+            user_uuid = self._parse_user_id(user_id)
+            return (
+                self.db.query(UserProfile).filter(UserProfile.id == user_uuid).first()
+            )
+        except ValueError:
+            return None
 
     def update_user_profile(self, user_id: str, **kwargs) -> Optional[UserProfile]:
         """Update user profile"""
         profile = self.get_user_profile(user_id)
         if not profile:
             # Create profile if it doesn't exist
-            profile = UserProfile(id=user_id)
-            self.db.add(profile)
+            try:
+                user_uuid = self._parse_user_id(user_id)
+                profile = UserProfile(id=user_uuid)
+                self.db.add(profile)
+            except ValueError:
+                return None
 
         for key, value in kwargs.items():
             if hasattr(profile, key):
@@ -201,18 +306,30 @@ class AuthManager:
         self.db.refresh(profile)
         return profile
 
-    # Usage Limits
+    # Usage Limits Management
     def get_usage_limits(self, user_id: str) -> Optional[UsageLimit]:
         """Get user usage limits"""
-        return self.db.query(UsageLimit).filter(UsageLimit.user_id == user_id).first()
+        try:
+            user_uuid = self._parse_user_id(user_id)
+            return (
+                self.db.query(UsageLimit)
+                .filter(UsageLimit.user_id == user_uuid)
+                .first()
+            )
+        except ValueError:
+            return None
 
     def update_usage_limits(self, user_id: str, **kwargs) -> Optional[UsageLimit]:
         """Update user usage limits"""
         limits = self.get_usage_limits(user_id)
         if not limits:
             # Create limits if they don't exist
-            limits = UsageLimit(user_id=user_id)
-            self.db.add(limits)
+            try:
+                user_uuid = self._parse_user_id(user_id)
+                limits = UsageLimit(user_id=user_uuid)
+                self.db.add(limits)
+            except ValueError:
+                return None
 
         for key, value in kwargs.items():
             if hasattr(limits, key):
@@ -226,23 +343,19 @@ class AuthManager:
     # Service Status
     def get_service_status(self, user_id: str) -> Dict[str, bool]:
         """Get status of all connected services for a user"""
-        credentials = self.get_user_credentials(user_id)
-
-        status = {
-            "outlook": False,
-            "pipedrive": False,
-            "openai": False,
-            "anthropic": False,
-        }
-
-        for cred in credentials:
-            if cred["credential_type"] == "outlook_oauth" and cred["is_active"]:
-                status["outlook"] = True
-            elif cred["credential_type"] == "pipedrive_oauth" and cred["is_active"]:
-                status["pipedrive"] = True
-            elif cred["credential_type"] == "openai_api_key" and cred["is_active"]:
-                status["openai"] = True
-            elif cred["credential_type"] == "anthropic_api_key" and cred["is_active"]:
-                status["anthropic"] = True
-
-        return status
+        try:
+            return {
+                "outlook": self.is_service_connected(user_id, "outlook"),
+                "pipedrive": self.is_service_connected(user_id, "pipedrive"),
+                "openai": False,
+                "anthropic": False,
+            }
+        except Exception as e:
+            # Log the error and return default status
+            print(f"Error getting service status for user {user_id}: {e}")
+            return {
+                "outlook": False,
+                "pipedrive": False,
+                "openai": False,
+                "anthropic": False,
+            }

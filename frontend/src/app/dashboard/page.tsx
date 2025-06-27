@@ -1,19 +1,52 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useOAuth } from "@/lib/hooks/use-oauth";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { serviceStatus, loading, error, connectOAuth, refreshStatus } = useOAuth();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [oauthMessage, setOauthMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
   useEffect(() => {
     if (status === "loading") return;
     if (!session) {
       router.push("/auth/signin");
+    } else if (session.user?.id) {
+      setUserId(session.user.id);
+      if (!serviceStatus) {
+        refreshStatus(session.user.id);
+      }
     }
-  }, [session, status, router]);
+  }, [session, status, router, refreshStatus, serviceStatus]);
+
+  useEffect(() => {
+    const oauthSuccess = searchParams.get('oauth_success');
+    const oauthError = searchParams.get('oauth_error');
+    const service = searchParams.get('service');
+
+    if (oauthSuccess === 'true' && service && userId) {
+      setOauthMessage({ type: 'success', message: `${service} connected successfully!` });
+      refreshStatus(userId);
+      router.replace('/dashboard');
+    } else if (oauthError) {
+      setOauthMessage({ type: 'error', message: oauthError });
+      router.replace('/dashboard');
+    }
+  }, [searchParams, userId, refreshStatus, router]);
+
+  const handleConnectOAuth = async (provider: string) => {
+    if (!userId) {
+      console.error("No user ID available");
+      return;
+    }
+    await connectOAuth(provider, userId);
+  };
 
   if (status === "loading") {
     return (
@@ -45,12 +78,103 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                Connected
-              </span>
+              {serviceStatus && (
+                <div className="flex space-x-2">
+                  {serviceStatus.outlook && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                      Outlook
+                    </span>
+                  )}
+                  {serviceStatus.pipedrive && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                      Pipedrive
+                    </span>
+                  )}
+                  {!serviceStatus.outlook && !serviceStatus.pipedrive && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+                      Not Connected
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
+
+        {/* OAuth Message Display */}
+        {oauthMessage && (
+          <div className="px-4 sm:px-0 mb-6">
+            <div className={`border rounded-md p-4 ${
+              oauthMessage.type === 'success' 
+                ? 'bg-green-50 border-green-200' 
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  {oauthMessage.type === 'success' ? (
+                    <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </div>
+                <div className="ml-3">
+                  <h3 className={`text-sm font-medium ${
+                    oauthMessage.type === 'success' ? 'text-green-800' : 'text-red-800'
+                  }`}>
+                    {oauthMessage.type === 'success' ? 'Success' : 'Error'}
+                  </h3>
+                  <div className={`mt-2 text-sm ${
+                    oauthMessage.type === 'success' ? 'text-green-700' : 'text-red-700'
+                  }`}>
+                    <p>{oauthMessage.message}</p>
+                  </div>
+                </div>
+                <div className="ml-auto pl-3">
+                  <div className="-mx-1.5 -my-1.5">
+                    <button
+                      onClick={() => setOauthMessage(null)}
+                      className={`inline-flex rounded-md p-1.5 ${
+                        oauthMessage.type === 'success' 
+                          ? 'bg-green-50 text-green-500 hover:bg-green-100' 
+                          : 'bg-red-50 text-red-500 hover:bg-red-100'
+                      }`}
+                    >
+                      <span className="sr-only">Dismiss</span>
+                      <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error Display */}
+        {error && (
+          <div className="px-4 sm:px-0 mb-6">
+            <div className="bg-red-50 border border-red-200 rounded-md p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Error</h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>{error}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 px-4 sm:px-0 mb-8">
@@ -171,8 +295,25 @@ export default function DashboardPage() {
                   <p className="text-sm text-gray-500 mb-3">
                     Connect your Outlook account to start monitoring emails
                   </p>
-                  <button className="w-full bg-blue-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700">
-                    Connect Outlook
+                  <button 
+                    onClick={() => handleConnectOAuth('outlook')}
+                    disabled={loading}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium ${
+                      serviceStatus?.outlook 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {loading ? (
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Connecting...
+                      </div>
+                    ) : serviceStatus?.outlook ? (
+                      'Connected ✓'
+                    ) : (
+                      'Connect Outlook'
+                    )}
                   </button>
                 </div>
 
@@ -188,8 +329,25 @@ export default function DashboardPage() {
                   <p className="text-sm text-gray-500 mb-3">
                     Connect your Pipedrive account to create deals automatically
                   </p>
-                  <button className="w-full bg-green-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-green-700">
-                    Connect Pipedrive
+                  <button 
+                    onClick={() => handleConnectOAuth('pipedrive')}
+                    disabled={loading}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium ${
+                      serviceStatus?.pipedrive 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {loading ? (
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Connecting...
+                      </div>
+                    ) : serviceStatus?.pipedrive ? (
+                      'Connected ✓'
+                    ) : (
+                      'Connect Pipedrive'
+                    )}
                   </button>
                 </div>
 

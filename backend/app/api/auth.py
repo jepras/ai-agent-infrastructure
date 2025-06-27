@@ -1,11 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List
 import secrets
 import string
+import os
 
 from ..core.database import get_db
 from ..auth.manager import AuthManager
+from ..auth.oauth.base import OAuthManager
+from ..auth.oauth.outlook import OutlookOAuthProvider
+from ..auth.oauth.pipedrive import PipedriveOAuthProvider
 from ..models.schemas import (
     UserCreate,
     UserResponse,
@@ -25,6 +29,31 @@ router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
 def get_auth_manager(db: Session = Depends(get_db)) -> AuthManager:
     return AuthManager(db)
+
+
+def get_oauth_manager(db: Session = Depends(get_db)) -> OAuthManager:
+    """Get OAuth manager with registered providers"""
+    oauth_manager = OAuthManager(db)
+
+    # Register Outlook provider
+    outlook_provider = OutlookOAuthProvider(
+        db=db,
+        client_id=os.getenv("OUTLOOK_CLIENT_ID", ""),
+        client_secret=os.getenv("OUTLOOK_CLIENT_SECRET", ""),
+        redirect_uri=f"{os.getenv('NEXTAUTH_URL', 'http://localhost:3000')}/api/auth/callback/outlook",
+    )
+    oauth_manager.register_provider("outlook", outlook_provider)
+
+    # Register Pipedrive provider
+    pipedrive_provider = PipedriveOAuthProvider(
+        db=db,
+        client_id=os.getenv("PIPEDRIVE_CLIENT_ID", ""),
+        client_secret=os.getenv("PIPEDRIVE_CLIENT_SECRET", ""),
+        redirect_uri=f"{os.getenv('NEXTAUTH_URL', 'http://localhost:3000')}/api/auth/callback/pipedrive",
+    )
+    oauth_manager.register_provider("pipedrive", pipedrive_provider)
+
+    return oauth_manager
 
 
 def generate_state() -> str:
@@ -71,6 +100,78 @@ def get_user_by_email(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return UserResponse.from_orm(user)
+
+
+# OAuth endpoints
+@router.post("/oauth/connect")
+async def connect_oauth(
+    request: Request, oauth_manager: OAuthManager = Depends(get_oauth_manager)
+):
+    """Initiate OAuth flow for a service"""
+    try:
+        body = await request.json()
+        service = body.get("provider")
+        user_id = body.get("user_id")
+
+        if not service or not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing provider or user_id",
+            )
+
+        auth_url = oauth_manager.get_authorization_url(service, user_id)
+        return {"oauth_url": auth_url}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/connect/{service}")
+def initiate_oauth(
+    service: str, user_id: str, oauth_manager: OAuthManager = Depends(get_oauth_manager)
+):
+    """Initiate OAuth flow for a service"""
+    try:
+        auth_url = oauth_manager.get_authorization_url(service, user_id)
+        return {"auth_url": auth_url}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/callback/{service}")
+async def oauth_callback(
+    service: str,
+    code: str,
+    state: str,
+    oauth_manager: OAuthManager = Depends(get_oauth_manager),
+):
+    """Handle OAuth callback for a service"""
+    try:
+        result = await oauth_manager.handle_callback(service, code, state)
+        return {
+            "success": True,
+            "user_id": result["user_id"],
+            "service": service,
+            "user_info": result.get("user_info"),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
+@router.delete("/disconnect/{service}")
+def disconnect_service(
+    service: str, user_id: str, auth_manager: AuthManager = Depends(get_auth_manager)
+):
+    """Disconnect a service for a user"""
+    success = auth_manager.disconnect_service(user_id, service)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Service not connected"
+        )
+    return BaseResponse(message=f"{service} disconnected successfully")
 
 
 # Profile management endpoints
@@ -203,53 +304,8 @@ def update_usage_limits(
     return UsageLimitResponse.from_orm(limits)
 
 
-# OAuth initiation endpoints (placeholder for now)
-@router.get("/connect/{service}")
-def initiate_oauth(
-    service: str, user_id: str, auth_manager: AuthManager = Depends(get_auth_manager)
-):
-    """Initiate OAuth flow for a service"""
-    # This will be implemented when we add OAuth flows
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"OAuth for {service} not yet implemented",
-    )
-
-
-@router.get("/callback/{service}")
-def oauth_callback(
-    service: str,
-    code: str,
-    state: str,
-    auth_manager: AuthManager = Depends(get_auth_manager),
-):
-    """Handle OAuth callback for a service"""
-    # This will be implemented when we add OAuth flows
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"OAuth callback for {service} not yet implemented",
-    )
-
-
-# Simple authentication endpoint (temporary workaround)
+# Simple authentication endpoint (for testing)
 @router.post("/simple-auth")
 def simple_auth(email: str):
-    """Simple authentication endpoint that just checks if user exists"""
-    try:
-        auth_manager = AuthManager(next(get_db()))
-        user = auth_manager.get_user_by_email(email)
-        if user:
-            return {
-                "success": True,
-                "user": {
-                    "id": str(user.id),
-                    "email": user.email,
-                    "name": user.name,
-                    "image": user.image,
-                },
-            }
-        else:
-            return {"success": False, "error": "User not found"}
-    except Exception as e:
-        print(f"Simple auth error: {e}")
-        return {"success": False, "error": "Authentication failed"}
+    """Simple authentication for testing purposes"""
+    return {"email": email, "authenticated": True}

@@ -264,3 +264,15 @@ class WebhookSubscription(Base):
 
     # Constraints
     __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_provider"),)
+
+
+class OAuthState(Base):
+    __tablename__ = "oauth_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    state = Column(String, unique=True, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    service = Column(String, nullable=False)  # 'outlook', 'pipedrive'
+    created_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime, nullable=False)
+    state_metadata = Column(JSONB)  # Additional state data
