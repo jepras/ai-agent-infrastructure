@@ -1,0 +1,9 @@
+# Ignore Node.js files for backend deployment
+package.json
+package-lock.json
+node_modules/
+frontend/
+.next/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log* 
