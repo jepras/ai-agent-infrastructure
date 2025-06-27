@@ -229,3 +229,27 @@ def oauth_callback(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=f"OAuth callback for {service} not yet implemented",
     )
+
+
+# Simple authentication endpoint (temporary workaround)
+@router.post("/simple-auth")
+def simple_auth(email: str):
+    """Simple authentication endpoint that just checks if user exists"""
+    try:
+        auth_manager = AuthManager(next(get_db()))
+        user = auth_manager.get_user_by_email(email)
+        if user:
+            return {
+                "success": True,
+                "user": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "name": user.name,
+                    "image": user.image,
+                },
+            }
+        else:
+            return {"success": False, "error": "User not found"}
+    except Exception as e:
+        print(f"Simple auth error: {e}")
+        return {"success": False, "error": "Authentication failed"}

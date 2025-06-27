@@ -11,11 +11,11 @@ class Settings(BaseSettings):
     nextauth_url: str = "http://localhost:3000"
     nextauth_secret: str
 
-    # OAuth Applications
-    outlook_client_id: str
-    outlook_client_secret: str
-    pipedrive_client_id: str
-    pipedrive_client_secret: str
+    # OAuth Applications (optional for now)
+    outlook_client_id: Optional[str] = None
+    outlook_client_secret: Optional[str] = None
+    pipedrive_client_id: Optional[str] = None
+    pipedrive_client_secret: Optional[str] = None
 
     # System Security
     credential_encryption_key: str
@@ -44,13 +44,10 @@ settings = Settings()
 # Validate required settings
 def validate_settings():
     """Validate that all required settings are present"""
+    # Only validate essential settings for now
     required_fields = [
         "database_url",
         "nextauth_secret",
-        "outlook_client_id",
-        "outlook_client_secret",
-        "pipedrive_client_id",
-        "pipedrive_client_secret",
         "credential_encryption_key",
         "jwt_secret",
     ]
@@ -66,6 +63,6 @@ def validate_settings():
         )
 
 
-# Validate on import
-if os.getenv("ENVIRONMENT") != "test":
+# Validate on import (only in production)
+if os.getenv("ENVIRONMENT") == "production":
     validate_settings()

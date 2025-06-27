@@ -45,7 +45,11 @@ class AuthManager:
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         """Get user by email"""
-        return self.db.query(User).filter(User.email == email).first()
+        try:
+            return self.db.query(User).filter(User.email == email).first()
+        except Exception as e:
+            print(f"Error getting user by email {email}: {e}")
+            return None
 
     def get_user_by_id(self, user_id: str) -> Optional[User]:
         """Get user by ID"""

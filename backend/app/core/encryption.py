@@ -7,12 +7,12 @@ from typing import Optional
 class EncryptionManager:
     def __init__(self):
         # Get encryption key from environment or generate one
-        self.key = os.getenv("ENCRYPTION_KEY")
+        self.key = os.getenv("CREDENTIAL_ENCRYPTION_KEY") or os.getenv("ENCRYPTION_KEY")
         if not self.key:
             # Generate a new key if not provided (for development)
             self.key = Fernet.generate_key()
             print(
-                f"WARNING: No ENCRYPTION_KEY found. Generated new key: {self.key.decode()}"
+                f"WARNING: No CREDENTIAL_ENCRYPTION_KEY found. Generated new key: {self.key.decode()}"
             )
 
         # Ensure key is bytes
