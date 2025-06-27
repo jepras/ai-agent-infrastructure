@@ -16,18 +16,26 @@ class AuthManager:
     def _parse_user_id(self, user_id: str) -> uuid.UUID:
         """Parse user ID, handling fallback IDs from NextAuth"""
         try:
+            print(f"Parsing user ID: {user_id}")
             # If it's a fallback user ID from NextAuth, extract the email and find/create user
             if user_id.startswith("user-"):
                 email = user_id.replace("user-", "")
+                print(f"Fallback user ID detected, email: {email}")
                 user = self.get_user_by_email(email)
                 if not user:
+                    print(f"User not found, creating new user for email: {email}")
                     # Create the user if it doesn't exist
                     user = self.create_user(email=email, name=email.split("@")[0])
+                    print(f"Created user with ID: {user.id}")
+                else:
+                    print(f"Found existing user with ID: {user.id}")
                 return user.id
             else:
                 # Assume it's a valid UUID
+                print(f"Treating as UUID: {user_id}")
                 return uuid.UUID(user_id)
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError) as e:
+            print(f"Error parsing user ID {user_id}: {e}")
             raise ValueError(f"Invalid user ID format: {user_id}")
 
     # User Management
@@ -204,7 +212,9 @@ class AuthManager:
     def get_user_credentials(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all credentials for a user (without decrypted data)"""
         try:
+            print(f"Getting credentials for user_id: {user_id}")
             user_uuid = self._parse_user_id(user_id)
+            print(f"Converted to UUID: {user_uuid}")
             credentials = (
                 self.db.query(UserCredential)
                 .filter(UserCredential.user_id == user_uuid)
@@ -226,7 +236,8 @@ class AuthManager:
                 )
 
             return result
-        except ValueError:
+        except (ValueError, Exception) as e:
+            print(f"Error getting user credentials for {user_id}: {e}")
             return []
 
     # OAuth Integration Methods

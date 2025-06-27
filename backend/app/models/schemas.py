@@ -28,20 +28,24 @@ class UserCreate(UserBase):
     pass
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: str
+    email: str
+    name: Optional[str] = None
+    image: Optional[str] = None
     email_verified: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
-    @validator("id", pre=True)
+    class Config:
+        from_attributes = True
+
+    @field_validator("id", mode="before")
+    @classmethod
     def convert_uuid_to_string(cls, v):
         if isinstance(v, uuid.UUID):
             return str(v)
         return v
-
-    class Config:
-        from_attributes = True
 
 
 # Profile schemas
