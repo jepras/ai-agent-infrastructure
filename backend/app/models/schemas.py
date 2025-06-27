@@ -34,6 +34,12 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
 
+    @validator("id", pre=True)
+    def convert_uuid_to_string(cls, v):
+        if isinstance(v, uuid.UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -60,6 +66,12 @@ class UserProfileResponse(UserProfileBase):
     created_at: datetime
     updated_at: datetime
 
+    @validator("id", pre=True)
+    def convert_uuid_to_string(cls, v):
+        if isinstance(v, uuid.UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -80,6 +92,12 @@ class CredentialResponse(CredentialBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+    @validator("id", pre=True)
+    def convert_uuid_to_string(cls, v):
+        if isinstance(v, uuid.UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -116,6 +134,12 @@ class UsageTrackingResponse(BaseModel):
     emails_processed: int
     tokens_used: int
     cost_incurred: Decimal
+
+    @validator("id", "user_id", pre=True)
+    def convert_uuid_to_string(cls, v):
+        if isinstance(v, uuid.UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -159,6 +183,12 @@ class EmailAnalysisResponse(EmailAnalysisBase):
     user_id: str
     processed_at: datetime
 
+    @validator("id", "user_id", pre=True)
+    def convert_uuid_to_string(cls, v):
+        if isinstance(v, uuid.UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -184,6 +214,12 @@ class DealCreatedResponse(DealCreatedBase):
     email_analysis_id: str
     created_at: datetime
 
+    @validator("id", "user_id", "email_analysis_id", pre=True)
+    def convert_uuid_to_string(cls, v):
+        if isinstance(v, uuid.UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -204,6 +240,12 @@ class WebhookSubscriptionResponse(WebhookSubscriptionBase):
     id: str
     user_id: str
     created_at: datetime
+
+    @validator("id", "user_id", pre=True)
+    def convert_uuid_to_string(cls, v):
+        if isinstance(v, uuid.UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
